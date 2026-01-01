@@ -4,15 +4,13 @@ use console::{ Term, style };
 use image::{ DynamicImage, GenericImageView, ImageReader };
 
 const BRIGHTNESS: &str = "Ñ@#W$9876543210?!abc;:+=-,._      ";
-const FPS: u64 = 15;
+const FPS: u64 = 10;
 
-struct ASCIIPixel {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-    ch: char,
-}
+mod guards;
+
+use crate::guards::terminal_guard::TerminalGuard;
+
+struct ASCIIPixel(u8, u8, u8, char);
 
 fn resize_image(img: DynamicImage) -> DynamicImage {
     let term = Term::stdout();
@@ -50,7 +48,6 @@ fn convert_to_ascii(img: DynamicImage) -> Vec<Vec<ASCIIPixel>> {
         let r = rgba[0] as f32;
         let g = rgba[1] as f32;
         let b = rgba[2] as f32;
-        let a = rgba[3];
 
         let luminance = (r + g + b) / 3.0;
         let normalized = luminance / 255.0;
@@ -60,13 +57,7 @@ fn convert_to_ascii(img: DynamicImage) -> Vec<Vec<ASCIIPixel>> {
         // Invert so darker pixels use denser characters
         let ch = ramp[ramp.len() - 1 - idx];
 
-        let ascii_pixel = ASCIIPixel {
-            r: r as u8,
-            g: g as u8,
-            b: b as u8,
-            a: a,
-            ch,
-        };
+        let ascii_pixel = ASCIIPixel(r as u8, g as u8, b as u8, ch);
 
         line_pixels.push(ascii_pixel);
     }
@@ -81,21 +72,21 @@ fn convert_to_ascii(img: DynamicImage) -> Vec<Vec<ASCIIPixel>> {
 fn draw_image(pixels: Vec<Vec<ASCIIPixel>>) -> Result<(), Box<dyn Error>> {
     let terminal = Term::stdout();
 
-    terminal.clear_screen()?;
+    terminal.move_cursor_to(0, 0)?;
 
     let mut frame = String::new();
 
     for row in pixels {
         for px in row {
-            // Skip pixel if its transparent
-            if px.a == 0 {
-                frame.push(' ');
-                continue;
-            }
+            // let image_pixel = format!("{}{}", px.3, px.3);
+            let image_pixel = &style(format!("{}{}", px.3, px.3))
+                .true_color(px.0, px.1, px.2)
+                .to_string();
+            // let image_pixel = style("  ")
+            //     .bg(console::Color::TrueColor(px.r, px.g, px.b))
+            //     .to_string();
 
-            frame.push_str(
-                &style(format!("{}{}", px.ch, px.ch)).true_color(px.r, px.g, px.b).to_string()
-            );
+            frame.push_str(&image_pixel);
         }
 
         terminal.write_line(&mem::take(&mut frame))?;
@@ -121,6 +112,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("ffmpeg failed".into());
     }
 
+    let terminal_guard = TerminalGuard::new();
+
+    terminal_guard.enter_alternate_screen()?;
+
     let frames_dir = fs::read_dir("assets/frames")?;
     let frame_duration = Duration::from_secs_f32(1.0 / (FPS as f32));
 
@@ -138,6 +133,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             thread::sleep(frame_duration - elapsed_time);
         }
     }
+
+    terminal_guard.leave_alternate_screen()?;
 
     Ok(())
 }
