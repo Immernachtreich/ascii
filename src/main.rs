@@ -4,7 +4,7 @@ use console::{ Term, style };
 use image::{ DynamicImage, GenericImageView, ImageReader };
 
 const BRIGHTNESS: &str = "Ñ@#W$9876543210?!abc;:+=-,._      ";
-const FPS: u64 = 10;
+const FPS: u64 = 15;
 
 mod guards;
 
@@ -89,8 +89,9 @@ fn draw_image(pixels: Vec<Vec<ASCIIPixel>>) -> Result<(), Box<dyn Error>> {
             frame.push_str(&image_pixel);
         }
 
-        terminal.write_line(&mem::take(&mut frame))?;
+        frame.push_str("\n");
     }
+    terminal.write_line(&frame)?;
     terminal.flush()?;
 
     Ok(())
