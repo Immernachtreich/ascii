@@ -1,9 +1,10 @@
-use std::{ cmp::min, error::Error, mem };
+use std::{ cmp::min, error::Error, fs, mem, process::Command, thread, time::{ Duration, Instant } };
 
 use console::{ Term, style };
 use image::{ DynamicImage, GenericImageView, ImageReader };
 
 const BRIGHTNESS: &str = "Ñ@#W$9876543210?!abc;:+=-,._      ";
+const FPS: u64 = 15;
 
 struct ASCIIPixel {
     r: u8,
@@ -99,16 +100,44 @@ fn draw_image(pixels: Vec<Vec<ASCIIPixel>>) -> Result<(), Box<dyn Error>> {
 
         terminal.write_line(&mem::take(&mut frame))?;
     }
+    terminal.flush()?;
 
     Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let img = ImageReader::open("assets/strawberry.jpg")?.decode()?;
+    fs::remove_dir_all("assets/frames")?;
+    fs::create_dir("assets/frames")?;
 
-    let img = resize_image(img);
-    let image_pixels = convert_to_ascii(img);
-    draw_image(image_pixels)?;
+    let status = Command::new("ffmpeg")
+        .arg("-i")
+        .arg("assets/sample_video.mp4")
+        .arg("-vf")
+        .arg(format!("fps={},scale=120:-1", FPS))
+        .arg("assets/frames/frame_%05d.jpg")
+        .status()?;
+
+    if !status.success() {
+        return Err("ffmpeg failed".into());
+    }
+
+    let frames_dir = fs::read_dir("assets/frames")?;
+    let frame_duration = Duration::from_secs_f32(1.0 / (FPS as f32));
+
+    for (_, frame) in frames_dir.enumerate() {
+        let start_time = Instant::now();
+
+        let img = ImageReader::open(frame.unwrap().path())?.decode()?;
+        let img = resize_image(img);
+        let image_pixels = convert_to_ascii(img);
+
+        draw_image(image_pixels)?;
+
+        let elapsed_time = start_time.elapsed();
+        if frame_duration > elapsed_time {
+            thread::sleep(frame_duration - elapsed_time);
+        }
+    }
 
     Ok(())
 }
